@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Simple Editor</title>
+  <title>UrURL Image Studio</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
@@ -223,6 +223,7 @@
       <div class="drawer-tabs">
         <div class="tab-trigger active" data-target="tab-filters">🎛️ Filters</div>
         <div class="tab-trigger" data-target="tab-effects">✨ Effects</div>
+        <div class="tab-trigger" data-target="tab-paint">🖌️ Paint</div>
         <div class="tab-trigger" data-target="tab-geometry">📐 Transform</div>
         <div class="tab-trigger" data-target="tab-eraser">🧽 Eraser</div>
         <div class="tab-trigger" data-target="tab-export">💾 Save</div>
@@ -286,6 +287,24 @@
             <span id="activeEffectLabel" style="color: #60a5fa;">Ready to render style...</span>
             <button class="console-apply-btn" id="applyEffectBtn" style="background: #2563eb;">Render Effect</button>
           </div>
+        </div>
+      </div>
+
+      <!-- TAB PANEL: LIVE PAINT BRUSH & SURFACE ERASER -->
+      <div class="tab-content" id="tab-paint">
+        <div class="panel-block-row" style="margin-bottom: 12px;">
+          <div class="panel-prop-text">
+            <span>Color:</span>
+            <input type="color" id="paintColor" value="#3b82f6">
+          </div>
+          <div class="panel-prop-text" style="flex-grow: 1; justify-content: flex-end; gap: 10px;">
+            <button id="paintToolDraw" class="grid-card active" style="padding: 6px 16px; flex-direction: row; gap: 4px; margin: 0;"><span>🖌️</span>Draw</button>
+            <button id="paintToolErase" class="grid-card" style="padding: 6px 16px; flex-direction: row; gap: 4px; margin: 0;"><span>🧼</span>Eraser</button>
+          </div>
+        </div>
+        <div class="slider-group">
+          <label><span>Brush Weight / Diameter</span><span id="lbl-paintSize">10px</span></label>
+          <input type="range" id="sliderPaintSize" min="1" max="100" value="10">
         </div>
       </div>
 
@@ -388,6 +407,15 @@
     let filterSnapshot = null;
     let isWandToolActive = false;
     let isCropActive = false;
+    let isPaintModeActive = false;
+
+    // Paint Matrix Configurations Engine State
+    let isDrawing = false;
+    let paintTool = 'draw'; // 'draw' or 'erase'
+    let paintColor = '#3b82f6';
+    let paintSize = 10;
+    let lastPaintX = 0;
+    let lastPaintY = 0;
 
     // Crop Positioning Logic Boundaries
     let cropCoords = { x: 20, y: 20, w: 150, h: 150 };
@@ -545,11 +573,15 @@
       trigger.addEventListener('click', (e) => {
         discardUnappliedChanges();
 
+        const targetTab = e.target.getAttribute('data-target');
+        isPaintModeActive = (targetTab === 'tab-paint');
+        canvas.style.cursor = isPaintModeActive ? 'img' : 'default';
+
         document.querySelectorAll('.tab-trigger').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         
         e.target.classList.add('active');
-        document.getElementById(e.target.getAttribute('data-target')).classList.add('active');
+        document.getElementById(targetTab).classList.add('active');
       });
     });
 
@@ -570,6 +602,7 @@
       
       currentActiveFilter = null; currentActiveEffect = null;
       if (isWandToolActive) toggleWandState();
+      isPaintModeActive = false;
       renderWorkspaceView();
     }
 
@@ -705,7 +738,6 @@
     }
 
     function commitFilterState() {
-      // Flatten current changes permanently
       let tempC = document.createElement('canvas');
       tempC.width = workingCanvas.width; tempC.height = workingCanvas.height;
       let tempCtx = tempC.getContext('2d');
@@ -834,6 +866,106 @@
     });
 
     // ==========================================
+    // SEPARATED PANEL LAYER: DRAW & BRUSH ENGINE
+    // ==========================================
+    document.getElementById('paintColor').addEventListener('input', (e) => { paintColor = e.target.value; });
+    document.getElementById('sliderPaintSize').addEventListener('input', (e) => {
+      paintSize = parseInt(e.target.value, 10);
+      document.getElementById('lbl-paintSize').innerText = paintSize + 'px';
+    });
+
+    document.getElementById('paintToolDraw').addEventListener('click', () => {
+      paintTool = 'draw';
+      document.getElementById('paintToolDraw').classList.add('active');
+      document.getElementById('paintToolErase').classList.remove('active');
+    });
+
+    document.getElementById('paintToolErase').addEventListener('click', () => {
+      paintTool = 'erase';
+      document.getElementById('paintToolErase').classList.add('active');
+      document.getElementById('paintToolDraw').classList.remove('active');
+    });
+
+    // Tracking Vector Draw Event Chains
+    function getCanvasCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = workingCanvas.width / rect.width;
+      const scaleY = workingCanvas.height / rect.height;
+      
+      let clientX = e.clientX;
+      let clientY = e.clientY;
+      
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      }
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
+    function startPaintingStroke(e) {
+      if (!isPaintModeActive || !workingCanvas.width) return;
+      isDrawing = true;
+      const coords = getCanvasCoordinates(e);
+      lastPaintX = coords.x;
+      lastPaintY = coords.y;
+      
+      // Paint single dot on point tap click
+      executePaintStrokeDraw(coords.x, coords.y, coords.x, coords.y);
+    }
+
+    function movePaintingStroke(e) {
+      if (!isDrawing || !isPaintModeActive) return;
+      e.preventDefault(); // Lock mobile scroll interference completely
+      const coords = getCanvasCoordinates(e);
+      executePaintStrokeDraw(lastPaintX, lastPaintY, coords.x, coords.y);
+      lastPaintX = coords.x;
+      lastPaintY = coords.y;
+    }
+
+    function stopPaintingStroke() {
+      if (isDrawing) {
+        isDrawing = false;
+        pushHistory(); // Commit paths to stack logs
+      }
+    }
+
+    function executePaintStrokeDraw(x1, y1, x2, y2) {
+      workingCtx.save();
+      workingCtx.lineCap = 'round';
+      workingCtx.lineJoin = 'round';
+      workingCtx.lineWidth = paintSize;
+
+      if (paintTool === 'erase') {
+        workingCtx.globalCompositeOperation = 'destination-out';
+      } else {
+        workingCtx.globalCompositeOperation = 'source-over';
+        workingCtx.strokeStyle = paintColor;
+      }
+
+      workingCtx.beginPath();
+      workingCtx.moveTo(x1, y1);
+      workingCtx.lineTo(x2, y2);
+      workingCtx.stroke();
+      workingCtx.restore();
+
+      renderWorkspaceView();
+    }
+
+    // Pointer event registrations handle both mouse & hardware touch parameters natively
+    canvas.addEventListener('pointerdown', (e) => {
+      if (isPaintModeActive) startPaintingStroke(e);
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (isPaintModeActive && isDrawing) movePaintingStroke(e);
+    });
+    window.addEventListener('pointerup', stopPaintingStroke);
+    window.addEventListener('pointercancel', stopPaintingStroke);
+
+    // ==========================================
     // GEOMETRIC TRANSFORMATIONS UTILITIES
     // ==========================================
     function applyTransformFlip(axis) {
@@ -924,7 +1056,6 @@
       cropBox.style.height = cropCoords.h + 'px';
     }
 
-    // Draggable Overlay Bounding Calculations
     let isMovingCropBox = false, isScalingCropBox = false;
     let dragAnchor = { x: 0, y: 0 }, activeHandle = '';
 
@@ -939,7 +1070,7 @@
       handle.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         isScalingCropBox = true;
-        activeHandle = e.target.className.split(' ')[1].split('-')[1]; // nw, ne, sw, se
+        activeHandle = e.target.className.split(' ')[1].split('-')[1];
       });
     });
 
@@ -981,7 +1112,6 @@
     const endCropDrag = () => { isMovingCropBox = false; isScalingCropBox = false; };
     window.addEventListener('mouseup', endCropDrag);
 
-    // Support touch devices for the crop box drag metrics
     cropBox.addEventListener('touchstart', (e) => {
       if (e.target.classList.contains('crop-handle')) return;
       isMovingCropBox = true;
@@ -1074,34 +1204,34 @@
     });
 
     canvas.addEventListener('click', (e) => {
-      if(!isWandToolActive) return;
+      if(isWandToolActive) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = workingCanvas.width / rect.width;
+        const scaleY = workingCanvas.height / rect.height;
 
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = workingCanvas.width / rect.width;
-      const scaleY = workingCanvas.height / rect.height;
+        const clickX = Math.floor((e.clientX - rect.left) * scaleX);
+        const clickY = Math.floor((e.clientY - rect.top) * scaleY);
 
-      const clickX = Math.floor((e.clientX - rect.left) * scaleX);
-      const clickY = Math.floor((e.clientY - rect.top) * scaleY);
+        const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+        const data = imgData.data;
+        const startIdx = (clickY * workingCanvas.width + clickX) * 4;
 
-      const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
-      const data = imgData.data;
-      const startIdx = (clickY * workingCanvas.width + clickX) * 4;
+        const targetR = data[startIdx];
+        const targetG = data[startIdx+1];
+        const targetB = data[startIdx+2];
+        const tolerance = parseInt(document.getElementById('wandTolerance').value, 10);
 
-      const targetR = data[startIdx];
-      const targetG = data[startIdx+1];
-      const targetB = data[startIdx+2];
-      const tolerance = parseInt(document.getElementById('wandTolerance').value, 10);
-
-      for (let i = 0; i < data.length; i += 4) {
-        let diff = Math.sqrt((data[i]-targetR)**2 + (data[i+1]-targetG)**2 + (data[i+2]-targetB)**2);
-        if(diff <= tolerance * 1.73) {
-          data[i+3] = 0; 
+        for (let i = 0; i < data.length; i += 4) {
+          let diff = Math.sqrt((data[i]-targetR)**2 + (data[i+1]-targetG)**2 + (data[i+2]-targetB)**2);
+          if(diff <= tolerance * 1.73) {
+            data[i+3] = 0; 
+          }
         }
-      }
 
-      workingCtx.putImageData(imgData, 0, 0);
-      pushHistory();
-      renderWorkspaceView();
+        workingCtx.putImageData(imgData, 0, 0);
+        pushHistory();
+        renderWorkspaceView();
+      }
     });
 
     // ==========================================
@@ -1115,7 +1245,6 @@
       const format = document.getElementById('exportFormat').value;
       const bgMode = document.getElementById('exportBgMode').value;
       
-      // Fetch user specified dynamic target resolution properties
       const targetWidth = parseInt(document.getElementById('exportWidth').value, 10) || workingCanvas.width;
       const targetHeight = parseInt(document.getElementById('exportHeight').value, 10) || workingCanvas.height;
 
@@ -1132,7 +1261,6 @@
         exportCtx.fillRect(0, 0, targetWidth, targetHeight);
       }
 
-      // Draw standard composition mapped onto the user explicit target resolution sizes
       exportCtx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
 
       let a = document.createElement('a');
