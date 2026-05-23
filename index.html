@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Simple Editor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #08080a; user-select: none; -webkit-user-select: none;
+    }
+
+    /* Fixed Viewport System */
+    .viewport {
+      position: relative; width: 100%; height: 100%; display: flex; flex-direction: column;
+    }
+
+    /* Fast Action Utilities Header */
+    .top-actions {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between; z-index: 5; pointer-events: none;
+    }
+    .action-pill-box {
+      display: flex; gap: 8px; background: rgba(18, 18, 22, 0.85);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      padding: 6px; border-radius: 30px; border: 1px solid rgba(255, 255, 255, 0.08);
+      pointer-events: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .pill-btn {
+      background: transparent; border: none; color: white; width: 36px; height: 36px;
+      border-radius: 50%; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .pill-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+    .pill-btn.danger { color: #f87171; }
+    
+    .info-badge {
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(18, 18, 22, 0.85); color: #9ca3af; padding: 0 14px;
+      border-radius: 30px; font-size: 11px; font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Main Workspace Window */
+    .canvas-space {
+      position: relative; width: 100%; height: 100%; flex-grow: 1;
+      display: flex; align-items: center; justify-content: center; padding: 20px; padding-bottom: 60px;
+      background-color: #111;
+      background-image: linear-gradient(45deg, #18181c 25%, transparent 25%), linear-gradient(-45deg, #18181c 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #18181c 75%), linear-gradient(-45deg, transparent 75%, #18181c 75%);
+      background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+    
+    .canvas-container {
+      position: relative; max-width: 100%; max-height: 75vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    canvas { max-width: 100%; max-height: 72vh; object-fit: contain; box-shadow: 0 10px 40px rgba(0,0,0,0.6); touch-action: none; }
+
+    /* Interactive Crop Box Overlay Handles */
+    #cropBox {
+      position: absolute; border: 2px dashed #3b82f6;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+      display: none; cursor: move; z-index: 4;
+    }
+    .crop-handle {
+      position: absolute; width: 12px; height: 12px; background: white;
+      border: 2px solid #3b82f6; border-radius: 50%;
+    }
+    .ch-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+    .ch-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+    .ch-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+    .ch-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+    /* Initial Upload Interface Screen */
+    .upload-screen {
+      position: absolute; inset: 0; background: #08080a;
+      display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 15;
+    }
+    .upload-card {
+      border: 2px dashed #2e2e38; padding: 40px; border-radius: 16px; text-align: center;
+      cursor: pointer; max-width: 340px; width: 90%; transition: border-color 0.2s;
+    }
+    .upload-card:hover { border-color: #3b82f6; }
+    .upload-icon { font-size: 40px; margin-bottom: 12px; display: block; }
+    .upload-title { color: white; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .upload-sub { color: #6b7280; font-size: 12px; }
+
+    /* Slidable Control Drawer Container */
+    .drawer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(18, 18, 22, 0.94);
+      backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px 20px 0 0; z-index: 10;
+      transform: translateY(calc(100% - 40px));
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+      padding: 0 16px 24px 16px;
+    }
+    .drawer.expanded { transform: translateY(0); }
+
+    /* Handle Zone */
+    .drawer-handle-zone {
+      width: 100%; height: 40px; display: flex; justify-content: center; align-items: center; cursor: pointer;
+    }
+    .drawer-notch {
+      width: 44px; height: 5px; background: rgba(255, 255, 255, 0.3); border-radius: 3px;
+    }
+
+    /* Tab Navigation Architecture */
+    .drawer-tabs {
+      display: flex; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 14px; gap: 4px;
+    }
+    .tab-trigger {
+      flex: 1; text-align: center; padding: 10px 0; color: #9ca3af; font-size: 12px;
+      font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+    }
+    .tab-trigger.active { color: #3b82f6; border-bottom-color: #3b82f6; font-weight: 700; }
+
+    /* Content Views */
+    .tab-content { display: none; max-height: 260px; overflow-y: auto; padding-right: 2px; }
+    .tab-content.active { display: block; }
+
+    /* Flex grids for quick layout items selection */
+    .options-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .grid-card {
+      background: #1f1f25; border: 1px solid #2e2e38; border-radius: 8px; color: white;
+      padding: 10px 4px; font-size: 11px; text-align: center; cursor: pointer; display: flex;
+      flex-direction: column; align-items: center; gap: 6px; transition: background 0.15s;
+    }
+    .grid-card:active, .grid-card.active { background: #3b82f6; border-color: #60a5fa; }
+    .grid-card span { font-size: 16px; }
+
+    /* Interactive live tuning sub-sliders console interface */
+    .slider-console {
+      background: #16161c; border-radius: 10px; padding: 12px; margin-top: 12px;
+      display: none; border: 1px solid rgba(255,255,255,0.04);
+    }
+    .console-header { display: flex; justify-content: space-between; color: #9ca3af; font-size: 11px; margin-bottom: 6px; font-weight: 600; align-items: center;}
+    .slider-row { display: flex; align-items: center; gap: 12px; }
+    .slider-row input[type="range"] { flex-grow: 1; accent-color: #3b82f6; height: 6px; border-radius: 3px; }
+    .console-apply-btn {
+      background: #10b981; border: none; color: white; padding: 6px 14px; border-radius: 6px;
+      font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+
+    /* Tool Panels Layout Elements */
+    .panel-block-row { 
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; 
+      background: #16161c; padding: 10px; border-radius: 10px; margin-bottom: 10px; 
+    }
+    .panel-prop-text { display: flex; align-items: center; gap: 6px; color: #d1d5db; font-size: 11px; font-weight: 600; }
+    
+    .slider-group { margin-bottom: 10px; background: #16161c; padding: 10px; border-radius: 10px; }
+    .slider-group label { display: flex; justify-content: space-between; color: #9ca3af; font-size: 11px; margin-bottom: 6px; font-weight: 600; }
+    .slider-group input[type="range"] { width: 100%; accent-color: #3b82f6; height: 6px; border-radius: 3px; }
+
+    .export-layout { display: flex; flex-direction: column; gap: 10px; }
+    .export-row { display: flex; gap: 8px; }
+    select, input[type="number"] { 
+      flex: 1; background: #1f1f25; border: 1px solid #2e2e38; color: white; 
+      padding: 10px; border-radius: 8px; font-size: 12px; outline: none; 
+    }
+    input[type="number"] { width: 100%; }
+    .btn-commit-export { background: #2563eb; color: white; font-weight: 700; border: none; padding: 12px; border-radius: 8px; font-size: 13px; cursor: pointer; width: 100%; }
+
+    input[type="color"] {
+      -webkit-appearance: none; border: none; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; cursor: pointer; background: transparent;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: 2px solid white; border-radius: 50%; }
+  </style>
+</head>
+<body>
+
+  <div class="viewport">
+    
+    <!-- Upload Drop Screen Overlay -->
+    <div class="upload-screen" id="uploadScreen">
+      <div class="upload-card" onclick="document.getElementById('imageLoader').click()">
+        <span class="upload-icon">🖼️</span>
+        <div class="upload-title">Load Target Photo</div>
+        <div class="upload-sub">Tap to browse or drop an asset directly</div>
+        <input type="file" id="imageLoader" accept="image/*" style="display: none;">
+      </div>
+    </div>
+
+    <!-- Quick Floating Action Headers -->
+    <div class="top-actions">
+      <div class="action-pill-box">
+        <button id="undoBtn" class="pill-btn" title="Undo" disabled>↩️</button>
+        <button id="redoBtn" class="pill-btn" title="Redo" disabled>↪️</button>
+      </div>
+      <div id="resolutionBadge" class="info-badge">0 × 0</div>
+      <div class="action-pill-box">
+        <button id="resetImageBtn" class="pill-btn" title="Reload Original">🔄</button>
+        <button id="clearAllBtn" class="pill-btn danger" title="Clear All & Start New">🗑️</button>
+      </div>
+    </div>
+
+    <!-- Main Active Workspace -->
+    <div class="canvas-space">
+      <div class="canvas-container" id="canvasContainer">
+        <!-- Manual Resizable Bounding Box Overlays -->
+        <div id="cropBox">
+          <div class="crop-handle ch-nw"></div>
+          <div class="crop-handle ch-ne"></div>
+          <div class="crop-handle ch-sw"></div>
+          <div class="crop-handle ch-se"></div>
+        </div>
+        <canvas id="studioBoard"></canvas>
+      </div>
+    </div>
+
+    <!-- Bottom Slidable Sheet Control Panel -->
+    <div class="drawer" id="controlDrawer">
+      <div class="drawer-handle-zone" id="drawerHandle">
+        <div class="drawer-notch"></div>
+      </div>
+
+      <!-- Module Routing Tabs -->
+      <div class="drawer-tabs">
+        <div class="tab-trigger active" data-target="tab-filters">🎛️ Filters</div>
+        <div class="tab-trigger" data-target="tab-effects">✨ Effects</div>
+        <div class="tab-trigger" data-target="tab-geometry">📐 Transform</div>
+        <div class="tab-trigger" data-target="tab-eraser">🧽 Eraser</div>
+        <div class="tab-trigger" data-target="tab-export">💾 Save</div>
+      </div>
+
+      <!-- TAB PANEL: 10 ADJUSTMENT FILTERS -->
+      <div class="tab-content active" id="tab-filters">
+        <div class="options-grid">
+          <div class="grid-card" data-filter="sharpen"><span>🔪</span>Sharpen</div>
+          <div class="grid-card" data-filter="blur"><span>💧</span>Blur</div>
+          <div class="grid-card" data-filter="emboss"><span>🗿</span>Emboss</div>
+          <div class="grid-card" data-filter="edges"><span>🕸️</span>Edges</div>
+          <div class="grid-card" data-filter="pixelate"><span>👾</span>Pixelate</div>
+          <div class="grid-card" data-filter="noise"><span>📺</span>Noise</div>
+          <div class="grid-card" data-filter="grayscale"><span>🖤</span>Grayscale</div>
+          <div class="grid-card" data-filter="invert"><span>🔄</span>Invert</div>
+          <div class="grid-card" data-filter="sepia"><span>📜</span>Sepia</div>
+          <div class="grid-card" data-filter="warmth"><span>🔥</span>Warmth</div>
+        </div>
+        
+        <!-- Interactive Value Calibration Module -->
+        <div class="slider-console" id="filterConsole">
+          <div class="console-header">
+            <span id="activeFilterLabel">Adjustment</span>
+            <button class="console-apply-btn" id="applyFilterBtn">Apply</button>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="filterSlider" min="0" max="100" value="0">
+          </div>
+        </div>
+
+        <!-- Static Fast Slider Tweaks -->
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 4px;">
+          <div class="slider-group">
+            <label><span>Brightness</span><span id="lbl-bright">100%</span></label>
+            <input type="range" id="sliderBright" min="0" max="200" value="100">
+          </div>
+          <div class="slider-group">
+            <label><span>Contrast</span><span id="lbl-contrast">100%</span></label>
+            <input type="range" id="sliderContrast" min="0" max="200" value="100">
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB PANEL: 10 ARTISTIC EFFECTS -->
+      <div class="tab-content" id="tab-effects">
+        <div class="options-grid">
+          <div class="grid-card" data-effect="vintage"><span>🕰️</span>Vintage</div>
+          <div class="grid-card" data-effect="cyberpunk"><span>🔮</span>CyberNeon</div>
+          <div class="grid-card" data-effect="dramatic"><span>🎭</span>Dramatic</div>
+          <div class="grid-card" data-effect="polaroid"><span>📸</span>Polaroid</div>
+          <div class="grid-card" data-effect="fade"><span>☁️</span>Matte Fade</div>
+          <div class="grid-card" data-effect="solarize"><span>☀️</span>Solarize</div>
+          <div class="grid-card" data-effect="posterize"><span>🎨</span>Posterize</div>
+          <div class="grid-card" data-effect="comic"><span>💥</span>Comic Pop</div>
+          <div class="grid-card" data-effect="infrared"><span>🦎</span>Infrared</div>
+          <div class="grid-card" data-effect="monochrome"><span>🏁</span>High B&W</div>
+        </div>
+        <div class="slider-console" id="effectConsole" style="padding: 10px;">
+          <div class="console-header" style="margin: 0;">
+            <span id="activeEffectLabel" style="color: #60a5fa;">Ready to render style...</span>
+            <button class="console-apply-btn" id="applyEffectBtn" style="background: #2563eb;">Render Effect</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB PANEL: GEOMETRIC TRANSFORMS -->
+      <div class="tab-content" id="tab-geometry">
+        <div class="options-grid" style="margin-bottom: 12px;">
+          <div class="grid-card" id="geoFlipH"><span>↔️</span>Flip L-R</div>
+          <div class="grid-card" id="geoFlipV"><span>↕️</span>Flip U-D</div>
+          <div class="grid-card" id="geoRotate90"><span>🔄</span>Rotate 90°</div>
+          <div class="grid-card" id="geoCropBtn"><span>✂️</span>Crop Box</div>
+        </div>
+
+        <div class="panel-block-row" style="margin: 0;">
+          <div class="panel-prop-text">
+            <span>Canvas Width (px):</span>
+            <input type="number" id="resizeW" style="width: 80px; padding: 6px; border-radius:6px;">
+          </div>
+          <div class="panel-prop-text">
+            <span>Height:</span>
+            <input type="number" id="resizeH" style="width: 80px; padding: 6px; border-radius:6px; opacity:0.6;" readonly>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB PANEL: TRANSPARENCY MAGIC ERASER -->
+      <div class="tab-content" id="tab-eraser">
+        <div class="panel-block-row" style="margin-bottom: 10px;">
+          <span class="panel-prop-text" style="color:#9ca3af;">Tap background pixels inside the photo window to erase matching blocks.</span>
+        </div>
+        <div class="panel-block-row">
+          <button class="grid-card" id="magicWandToggle" style="width:100%; flex-direction:row; justify-content:center; gap:8px; padding:12px;">
+            <span>🪄</span><span>Background Target Wand</span>
+          </button>
+        </div>
+        <div class="slider-group">
+          <label><span>Color Tolerance Threshold</span><span id="lbl-tolerance">20</span></label>
+          <input type="range" id="wandTolerance" min="1" max="100" value="20">
+        </div>
+      </div>
+
+      <!-- TAB PANEL: CUSTOM HIGH-RESOLUTION EXPORT MATRIX -->
+      <div class="tab-content" id="tab-export">
+        <div class="export-layout">
+          <div class="panel-block-row" style="margin:0; gap: 8px;">
+            <div class="panel-prop-text" style="flex: 1;">
+              <span>Save Width:</span>
+              <input type="number" id="exportWidth" style="padding: 6px; border-radius:6px;">
+            </div>
+            <div class="panel-prop-text" style="flex: 1;">
+              <span>Save Height:</span>
+              <input type="number" id="exportHeight" style="padding: 6px; border-radius:6px;">
+            </div>
+          </div>
+
+          <div class="panel-block-row" style="margin:0;">
+            <div class="panel-prop-text">
+              <span>Canvas Base Layer:</span>
+              <select id="exportBgMode" style="padding:4px 8px; border-radius:6px; font-size:11px;">
+                <option value="transparent">Transparent Asset</option>
+                <option value="solid">Solid Base Fill Color</option>
+              </select>
+            </div>
+            <div class="panel-prop-text" id="exportColorWrapper" style="display: none;">
+              <input type="color" id="exportBgColor" value="#ffffff">
+            </div>
+          </div>
+          
+          <div class="export-row">
+            <select id="exportFormat">
+              <option value="image/png">PNG (.png)</option>
+              <option value="image/jpeg">JPEG (.jpg)</option>
+              <option value="image/webp">WebP (.webp)</option>
+            </select>
+          </div>
+          <button id="commitExportBtn" class="btn-commit-export">Export Image Output</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Master Layer Architectures
+    const canvas = document.getElementById('studioBoard');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const drawer = document.getElementById('controlDrawer');
+    const drawerHandle = document.getElementById('drawerHandle');
+    const uploadScreen = document.getElementById('uploadScreen');
+    const cropBox = document.getElementById('cropBox');
+
+    let nativeImg = null;
+    let workingCanvas = document.createElement('canvas'); 
+    let workingCtx = workingCanvas.getContext('2d', { willReadFrequently: true });
+
+    let undoStack = [], redoStack = [];
+    const MAX_HISTORY = 20;
+
+    let currentActiveFilter = null;
+    let currentActiveEffect = null;
+    let filterSnapshot = null;
+    let isWandToolActive = false;
+    let isCropActive = false;
+
+    // Crop Positioning Logic Boundaries
+    let cropCoords = { x: 20, y: 20, w: 150, h: 150 };
+
+    // Fast CSS Matrix Properties State Management
+    let sliderState = { bright: 100, contrast: 100 };
+
+    // Initialize Viewport Layouts
+    function initFileLoad(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        nativeImg = new Image();
+        nativeImg.onload = function() {
+          setupImageMaster(nativeImg);
+          uploadScreen.style.display = 'none';
+          drawer.classList.add('expanded');
+        };
+        nativeImg.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+    document.getElementById('imageLoader').addEventListener('change', initFileLoad);
+
+    function setupImageMaster(img) {
+      workingCanvas.width = img.naturalWidth;
+      workingCanvas.height = img.naturalHeight;
+      workingCtx.clearRect(0, 0, workingCanvas.width, workingCanvas.height);
+      workingCtx.drawImage(img, 0, 0);
+
+      undoStack = []; redoStack = [];
+      resetSlidersUI();
+      
+      // Save primary state
+      undoStack.push(workingCanvas.toDataURL());
+      updateHistoryButtons();
+      renderWorkspaceView();
+    }
+
+    function pushHistory() {
+      redoStack = [];
+      if (undoStack.length >= MAX_HISTORY) undoStack.shift();
+      undoStack.push(workingCanvas.toDataURL());
+      updateHistoryButtons();
+    }
+
+    function updateHistoryButtons() {
+      document.getElementById('undoBtn').disabled = undoStack.length <= 1;
+      document.getElementById('redoBtn').disabled = redoStack.length === 0;
+      
+      const w = workingCanvas.width;
+      const h = workingCanvas.height;
+      document.getElementById('resolutionBadge').innerText = `${w} × ${h}`;
+      document.getElementById('resizeW').value = w;
+      document.getElementById('resizeH').value = h;
+      
+      // Sync numerical save dimension properties live
+      document.getElementById('exportWidth').value = w;
+      document.getElementById('exportHeight').value = h;
+    }
+
+    // Workspace Rendering Pipeline
+    function renderWorkspaceView() {
+      if (!workingCanvas.width) return;
+      canvas.width = workingCanvas.width;
+      canvas.height = workingCanvas.height;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.filter = `brightness(${sliderState.bright}%) contrast(${sliderState.contrast}%)`;
+      ctx.drawImage(workingCanvas, 0, 0);
+      ctx.restore();
+    }
+
+    function resetSlidersUI() {
+      sliderState = { bright: 100, contrast: 100 };
+      document.getElementById('sliderBright').value = 100;
+      document.getElementById('sliderContrast').value = 100;
+      document.getElementById('lbl-bright').innerText = '100%';
+      document.getElementById('lbl-contrast').innerText = '100%';
+    }
+
+    // Live Sliders Handling
+    document.getElementById('sliderBright').addEventListener('input', (e) => {
+      sliderState.bright = e.target.value;
+      document.getElementById('lbl-bright').innerText = e.target.value + '%';
+      renderWorkspaceView();
+    });
+    document.getElementById('sliderContrast').addEventListener('input', (e) => {
+      sliderState.contrast = e.target.value;
+      document.getElementById('lbl-contrast').innerText = e.target.value + '%';
+      renderWorkspaceView();
+    });
+
+    // History Reversions
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      if (undoStack.length <= 1) return;
+      discardUnappliedChanges();
+      redoStack.push(undoStack.pop());
+      restoreStateFromUrl(undoStack[undoStack.length - 1]);
+    });
+
+    document.getElementById('redoBtn').addEventListener('click', () => {
+      if (redoStack.length === 0) return;
+      discardUnappliedChanges();
+      const state = redoStack.pop();
+      undoStack.push(state);
+      restoreStateFromUrl(state);
+    });
+
+    function restoreStateFromUrl(url) {
+      const img = new Image();
+      img.src = url;
+      img.onload = function() {
+        workingCanvas.width = img.width;
+        workingCanvas.height = img.height;
+        workingCtx.clearRect(0, 0, workingCanvas.width, workingCanvas.height);
+        workingCtx.drawImage(img, 0, 0);
+        renderWorkspaceView();
+        updateHistoryButtons();
+      };
+    }
+
+    document.getElementById('resetImageBtn').addEventListener('click', () => {
+      if(nativeImg && confirm('Reset all tracking modifications back to original image?')) {
+        discardUnappliedChanges();
+        setupImageMaster(nativeImg);
+      }
+    });
+
+    // Clear All Utility Framework - Resets screen for next images
+    document.getElementById('clearAllBtn').addEventListener('click', () => {
+      if (confirm('Wipe workspace completely and start editing a new image?')) {
+        discardUnappliedChanges();
+        nativeImg = null;
+        workingCanvas.width = 0; workingCanvas.height = 0;
+        canvas.width = 0; canvas.height = 0;
+        undoStack = []; redoStack = [];
+        document.getElementById('imageLoader').value = "";
+        document.getElementById('resolutionBadge').innerText = "0 × 0";
+        cropBox.style.display = 'none';
+        isCropActive = false;
+        document.getElementById('geoCropBtn').classList.remove('active');
+        uploadScreen.style.display = 'flex';
+        drawer.classList.remove('expanded');
+      }
+    });
+
+    // Drawer Slide Mechanics Toggle
+    drawerHandle.addEventListener('click', () => drawer.classList.toggle('expanded'));
+
+    // Modular Navigation Tab Management Loop
+    document.querySelectorAll('.tab-trigger').forEach(trigger => {
+      trigger.addEventListener('click', (e) => {
+        discardUnappliedChanges();
+
+        document.querySelectorAll('.tab-trigger').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        e.target.classList.add('active');
+        document.getElementById(e.target.getAttribute('data-target')).classList.add('active');
+      });
+    });
+
+    // Reverts any active sandbox modifications if user doesn't commit
+    function discardUnappliedChanges() {
+      if (filterSnapshot) {
+        workingCtx.putImageData(filterSnapshot, 0, 0);
+        filterSnapshot = null;
+      }
+      if (isCropActive) {
+        cropBox.style.display = 'none';
+        isCropActive = false;
+        document.getElementById('geoCropBtn').classList.remove('active');
+      }
+      document.getElementById('filterConsole').style.display = 'none';
+      document.getElementById('effectConsole').style.display = 'none';
+      document.querySelectorAll('.tab-content .grid-card').forEach(c => c.classList.remove('active'));
+      
+      currentActiveFilter = null; currentActiveEffect = null;
+      if (isWandToolActive) toggleWandState();
+      renderWorkspaceView();
+    }
+
+    // ==========================================
+    // PROCESSING ENGINE: 10 FILTERS ENGINE
+    // ==========================================
+    document.querySelectorAll('#tab-filters .grid-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (!filterSnapshot) {
+          filterSnapshot = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+        } else {
+          workingCtx.putImageData(filterSnapshot, 0, 0);
+        }
+        
+        document.querySelectorAll('#tab-filters .grid-card').forEach(c => c.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+
+        currentActiveFilter = e.currentTarget.getAttribute('data-filter');
+        document.getElementById('activeFilterLabel').innerText = `Tuning: ${currentActiveFilter.toUpperCase()}`;
+        
+        const sl = document.getElementById('filterSlider');
+        if(currentActiveFilter === 'blur') { sl.min = 0; sl.max = 15; sl.value = 0; }
+        else if(currentActiveFilter === 'sharpen') { sl.min = 0; sl.max = 8; sl.value = 0; }
+        else if(currentActiveFilter === 'pixelate') { sl.min = 1; sl.max = 32; sl.value = 1; }
+        else if(currentActiveFilter === 'noise') { sl.min = 0; sl.max = 100; sl.value = 0; }
+        else if(currentActiveFilter === 'warmth') { sl.min = 0; sl.max = 50; sl.value = 0; }
+        else { sl.min = 0; sl.max = 100; sl.value = 100; } 
+
+        document.getElementById('filterConsole').style.display = 'block';
+        executeSpatialFilterMath(parseInt(sl.value, 10));
+      });
+    });
+
+    document.getElementById('filterSlider').addEventListener('input', (e) => {
+      if(!filterSnapshot) return;
+      executeSpatialFilterMath(parseInt(e.target.value, 10));
+    });
+
+    function executeSpatialFilterMath(val) {
+      if (!filterSnapshot) return;
+      workingCtx.putImageData(filterSnapshot, 0, 0);
+      const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+      const d = imgData.data;
+      const w = workingCanvas.width;
+      const h = workingCanvas.height;
+
+      if(currentActiveFilter === 'grayscale') {
+        for (let i = 0; i < d.length; i += 4) {
+          let g = 0.2126 * d[i] + 0.7152 * d[i+1] + 0.0722 * d[i+2];
+          d[i] = d[i+1] = d[i+2] = g;
+        }
+      } else if(currentActiveFilter === 'invert') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = 255 - d[i]; d[i+1] = 255 - d[i+1]; d[i+2] = 255 - d[i+2];
+        }
+      } else if(currentActiveFilter === 'sepia') {
+        for (let i = 0; i < d.length; i += 4) {
+          let r = d[i], g = d[i+1], b = d[i+2];
+          d[i] = (r * 0.393) + (g * 0.769) + (b * 0.189);
+          d[i+1] = (r * 0.349) + (g * 0.686) + (b * 0.168);
+          d[i+2] = (r * 0.272) + (g * 0.534) + (b * 0.131);
+        }
+      } else if(currentActiveFilter === 'noise') {
+        for (let i = 0; i < d.length; i += 4) {
+          let n = (Math.random() - 0.5) * val * 2;
+          d[i] = Math.min(255, Math.max(0, d[i] + n));
+          d[i+1] = Math.min(255, Math.max(0, d[i+1] + n));
+          d[i+2] = Math.min(255, Math.max(0, d[i+2] + n));
+        }
+      } else if(currentActiveFilter === 'warmth') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = Math.min(255, d[i] + val);
+          d[i+2] = Math.max(0, d[i+2] - val * 0.5);
+        }
+      } else if(currentActiveFilter === 'pixelate' && val > 1) {
+        for (let y = 0; y < h; y += val) {
+          for (let x = 0; x < w; x += val) {
+            let i = (y * w + x) * 4;
+            workingCtx.fillStyle = `rgba(${d[i]}, ${d[i+1]}, ${d[i+2]}, ${d[i+3]/255})`;
+            workingCtx.fillRect(x, y, val, val);
+          }
+        }
+        renderWorkspaceView(); return;
+      } else if(['blur', 'sharpen', 'edges', 'emboss'].includes(currentActiveFilter)) {
+        let kernel = [];
+        if(currentActiveFilter === 'blur') {
+          let side = val || 1; let total = side * side;
+          kernel = Array(total).fill(1/total);
+        } else if(currentActiveFilter === 'sharpen') {
+          kernel = [0, -val/4, 0, -val/4, 1 + val, -val/4, 0, -val/4, 0];
+        } else if(currentActiveFilter === 'edges') {
+          kernel = [-1, -1, -1, -1, 8, -1, -1, -1, -1];
+        } else if(currentActiveFilter === 'emboss') {
+          kernel = [-2, -1, 0, -1, 1, 1, 0, 1, 2];
+        }
+        if(kernel.length > 0) applyConvolution(kernel);
+        renderWorkspaceView(); return;
+      }
+
+      workingCtx.putImageData(imgData, 0, 0);
+      renderWorkspaceView();
+    }
+
+    function applyConvolution(weights) {
+      const side = Math.round(Math.sqrt(weights.length));
+      const halfSide = Math.floor(side / 2);
+      const src = filterSnapshot.data;
+      const sw = filterSnapshot.width;
+      const sh = filterSnapshot.height;
+      
+      const output = workingCtx.createImageData(sw, sh);
+      const dst = output.data;
+
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const dstOff = (y * sw + x) * 4;
+          let r = 0, g = 0, b = 0, a = 0;
+          for (let cy = 0; cy < side; cy++) {
+            for (let cx = 0; cx < side; cx++) {
+              const scy = Math.min(sh - 1, Math.max(0, y + cy - halfSide));
+              const scx = Math.min(sw - 1, Math.max(0, x + cx - halfSide));
+              const srcOff = (scy * sw + scx) * 4;
+              const wt = weights[cy * side + cx];
+              r += src[srcOff] * wt;
+              g += src[srcOff + 1] * wt;
+              b += src[srcOff + 2] * wt;
+            }
+          }
+          dst[dstOff] = r; dst[dstOff+1] = g; dst[dstOff+2] = b; dst[dstOff+3] = src[dstOff+3];
+        }
+      }
+      workingCtx.putImageData(output, 0, 0);
+    }
+
+    function commitFilterState() {
+      // Flatten current changes permanently
+      let tempC = document.createElement('canvas');
+      tempC.width = workingCanvas.width; tempC.height = workingCanvas.height;
+      let tempCtx = tempC.getContext('2d');
+      tempCtx.filter = `brightness(${sliderState.bright}%) contrast(${sliderState.contrast}%)`;
+      tempCtx.drawImage(workingCanvas, 0, 0);
+      
+      workingCtx.clearRect(0,0,workingCanvas.width,workingCanvas.height);
+      workingCtx.drawImage(tempC, 0, 0);
+      resetSlidersUI();
+      
+      pushHistory();
+      filterSnapshot = null;
+      document.getElementById('filterConsole').style.display = 'none';
+      document.querySelectorAll('#tab-filters .grid-card').forEach(c => c.classList.remove('active'));
+      currentActiveFilter = null;
+      renderWorkspaceView();
+    }
+    document.getElementById('applyFilterBtn').addEventListener('click', commitFilterState);
+
+    // ==========================================
+    // PROCESSING ENGINE: 10 CREATIVE STYLES
+    // ==========================================
+    document.querySelectorAll('#tab-effects .grid-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (!filterSnapshot) {
+          filterSnapshot = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+        } else {
+          workingCtx.putImageData(filterSnapshot, 0, 0);
+        }
+
+        document.querySelectorAll('#tab-effects .grid-card').forEach(c => c.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+
+        currentActiveEffect = e.currentTarget.getAttribute('data-effect');
+        document.getElementById('activeEffectLabel').innerText = `Selected style: ${currentActiveEffect.toUpperCase()}`;
+        document.getElementById('effectConsole').style.display = 'block';
+
+        executeCreativeFXMath();
+      });
+    });
+
+    function executeCreativeFXMath() {
+      if (!filterSnapshot) return;
+      workingCtx.putImageData(filterSnapshot, 0, 0);
+      const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+      const d = imgData.data;
+
+      if (currentActiveEffect === 'vintage') {
+        for (let i = 0; i < d.length; i += 4) {
+          let r = d[i], g = d[i+1], b = d[i+2];
+          d[i] = (r * 0.393) + (g * 0.769) + (b * 0.189) + 15;
+          d[i+1] = (r * 0.349) + (g * 0.686) + (b * 0.168);
+          d[i+2] = (r * 0.272) + (g * 0.534) + (b * 0.131) - 10;
+        }
+      } else if(currentActiveEffect === 'cyberpunk') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i] > 100 ? 255 : d[i] + 30;
+          d[i+1] = d[i+1] * 0.4;
+          d[i+2] = d[i+2] > 100 ? 255 : d[i+2] + 70;
+        }
+      } else if(currentActiveEffect === 'dramatic') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i]*0.5; d[i+1] = d[i+1]*0.6; d[i+2] = d[i+2]*0.9;
+        }
+      } else if(currentActiveEffect === 'polaroid') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i]*0.88 + 20; d[i+1] = d[i+1]*0.88 + 15; d[i+2] = d[i+2]*0.75;
+        }
+      } else if(currentActiveEffect === 'fade') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i]*0.75 + 35; d[i+1] = d[i+1]*0.75 + 35; d[i+2] = d[i+2]*0.75 + 45;
+        }
+      } else if(currentActiveEffect === 'solarize') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = d[i] > 127 ? 255 - d[i] : d[i];
+          d[i+1] = d[i+1] > 127 ? 255 - d[i+1] : d[i+1];
+          d[i+2] = d[i+2] > 127 ? 255 - d[i+2] : d[i+2];
+        }
+      } else if(currentActiveEffect === 'posterize') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = Math.floor(d[i] / 64) * 64;
+          d[i+1] = Math.floor(d[i+1] / 64) * 64;
+          d[i+2] = Math.floor(d[i+2] / 64) * 64;
+        }
+      } else if(currentActiveEffect === 'comic') {
+        for (let i = 0; i < d.length; i += 4) {
+          let v = (d[i]+d[i+1]+d[i+2])/3;
+          let thresh = v > 128 ? 245 : 35;
+          d[i] = d[i+1] = d[i+2] = thresh;
+        }
+      } else if(currentActiveEffect === 'infrared') {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = 255 - d[i]; d[i+1] = d[i+1] * 0.1; d[i+2] = 255 - d[i+2];
+        }
+      } else if(currentActiveEffect === 'monochrome') {
+        for (let i = 0; i < d.length; i += 4) {
+          let v = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+          let c = v > 115 ? 255 : 20;
+          d[i] = d[i+1] = d[i+2] = c;
+        }
+      }
+
+      workingCtx.putImageData(imgData, 0, 0);
+      renderWorkspaceView();
+    }
+
+    document.getElementById('applyEffectBtn').addEventListener('click', () => {
+      if(!currentActiveEffect) return;
+      
+      let tempC = document.createElement('canvas');
+      tempC.width = workingCanvas.width; tempC.height = workingCanvas.height;
+      let tempCtx = tempC.getContext('2d');
+      tempCtx.filter = `brightness(${sliderState.bright}%) contrast(${sliderState.contrast}%)`;
+      tempCtx.drawImage(workingCanvas, 0, 0);
+      workingCtx.clearRect(0,0,workingCanvas.width,workingCanvas.height);
+      workingCtx.drawImage(tempC, 0, 0);
+      resetSlidersUI();
+
+      pushHistory();
+      filterSnapshot = null;
+      renderWorkspaceView();
+      
+      document.getElementById('effectConsole').style.display = 'none';
+      document.querySelectorAll('#tab-effects .grid-card').forEach(c => c.classList.remove('active'));
+      currentActiveEffect = null;
+    });
+
+    // ==========================================
+    // GEOMETRIC TRANSFORMATIONS UTILITIES
+    // ==========================================
+    function applyTransformFlip(axis) {
+      discardUnappliedChanges();
+      let temp = document.createElement('canvas');
+      temp.width = workingCanvas.width; temp.height = workingCanvas.height;
+      let tempCtx = temp.getContext('2d');
+
+      if(axis === 'h') {
+        tempCtx.translate(workingCanvas.width, 0); tempCtx.scale(-1, 1);
+      } else {
+        tempCtx.translate(0, workingCanvas.height); tempCtx.scale(1, -1);
+      }
+      tempCtx.drawImage(workingCanvas, 0, 0);
+      
+      workingCanvas.width = temp.width; workingCanvas.height = temp.height;
+      workingCtx.clearRect(0,0,workingCanvas.width,workingCanvas.height);
+      workingCtx.drawImage(temp, 0, 0);
+      pushHistory(); renderWorkspaceView();
+    }
+    document.getElementById('geoFlipH').addEventListener('click', () => applyTransformFlip('h'));
+    document.getElementById('geoFlipV').addEventListener('click', () => applyTransformFlip('v'));
+
+    document.getElementById('geoRotate90').addEventListener('click', () => {
+      discardUnappliedChanges();
+      let temp = document.createElement('canvas');
+      temp.width = workingCanvas.height; temp.height = workingCanvas.width;
+      let tempCtx = temp.getContext('2d');
+
+      tempCtx.translate(workingCanvas.height, 0);
+      tempCtx.rotate(90 * Math.PI / 180);
+      tempCtx.drawImage(workingCanvas, 0, 0);
+
+      workingCanvas.width = temp.width; workingCanvas.height = temp.height;
+      workingCtx.clearRect(0,0,workingCanvas.width,workingCanvas.height);
+      workingCtx.drawImage(temp, 0, 0);
+      pushHistory(); renderWorkspaceView();
+    });
+
+    function scaleImageDims(w) {
+      if(!w || w <= 0) return;
+      discardUnappliedChanges();
+      let aspect = workingCanvas.height / workingCanvas.width;
+      let h = Math.round(w * aspect);
+      document.getElementById('resizeH').value = h;
+
+      let temp = document.createElement('canvas');
+      temp.width = w; temp.height = h;
+      temp.getContext('2d').drawImage(workingCanvas, 0, 0, w, h);
+
+      workingCanvas.width = w; workingCanvas.height = h;
+      workingCtx.clearRect(0,0,w,h);
+      workingCtx.drawImage(temp, 0, 0);
+      pushHistory(); renderWorkspaceView();
+    }
+    document.getElementById('resizeW').addEventListener('change', (e) => scaleImageDims(parseInt(e.target.value, 10)));
+
+    // ==========================================
+    // INTERACTIVE FLEXIBLE CROP UI OVERLAYS
+    // ==========================================
+    const geoCropBtn = document.getElementById('geoCropBtn');
+    geoCropBtn.addEventListener('click', () => {
+      if (!workingCanvas.width) return;
+      
+      isCropActive = !isCropActive;
+      geoCropBtn.classList.toggle('active', isCropActive);
+      
+      if (isCropActive) {
+        const rect = canvas.getBoundingClientRect();
+        cropCoords = {
+          x: rect.width * 0.15,
+          y: rect.height * 0.15,
+          w: rect.width * 0.7,
+          h: rect.height * 0.7
+        };
+        cropBox.style.display = 'block';
+        updateCropBoxStyles();
+      } else {
+        executeActiveCanvasCrop();
+        cropBox.style.display = 'none';
+      }
+    });
+
+    function updateCropBoxStyles() {
+      cropBox.style.left = cropCoords.x + 'px';
+      cropBox.style.top = cropCoords.y + 'px';
+      cropBox.style.width = cropCoords.w + 'px';
+      cropBox.style.height = cropCoords.h + 'px';
+    }
+
+    // Draggable Overlay Bounding Calculations
+    let isMovingCropBox = false, isScalingCropBox = false;
+    let dragAnchor = { x: 0, y: 0 }, activeHandle = '';
+
+    cropBox.addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('crop-handle')) return;
+      isMovingCropBox = true;
+      dragAnchor.x = e.clientX - cropCoords.x;
+      dragAnchor.y = e.clientY - cropCoords.y;
+    });
+
+    document.querySelectorAll('.crop-handle').forEach(handle => {
+      handle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isScalingCropBox = true;
+        activeHandle = e.target.className.split(' ')[1].split('-')[1]; // nw, ne, sw, se
+      });
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      const containerRect = document.getElementById('canvasContainer').getBoundingClientRect();
+      let mouseX = e.clientX - containerRect.left;
+      let mouseY = e.clientY - containerRect.top;
+
+      if (isMovingCropBox) {
+        cropCoords.x = Math.max(0, Math.min(containerRect.width - cropCoords.w, e.clientX - dragAnchor.x));
+        cropCoords.y = Math.max(0, Math.min(containerRect.height - cropCoords.h, e.clientY - dragAnchor.y));
+        updateCropBoxStyles();
+      } else if (isScalingCropBox) {
+        if (activeHandle === 'se') {
+          cropCoords.w = Math.max(30, Math.min(containerRect.width - cropCoords.x, mouseX - cropCoords.x));
+          cropCoords.h = Math.max(30, Math.min(containerRect.height - cropCoords.y, mouseY - cropCoords.y));
+        } else if (activeHandle === 'sw') {
+          let origRight = cropCoords.x + cropCoords.w;
+          cropCoords.x = Math.max(0, Math.min(origRight - 30, mouseX));
+          cropCoords.w = origRight - cropCoords.x;
+          cropCoords.h = Math.max(30, Math.min(containerRect.height - cropCoords.y, mouseY - cropCoords.y));
+        } else if (activeHandle === 'ne') {
+          let origBottom = cropCoords.y + cropCoords.h;
+          cropCoords.w = Math.max(30, Math.min(containerRect.width - cropCoords.x, mouseX - cropCoords.x));
+          cropCoords.y = Math.max(0, Math.min(origBottom - 30, mouseY));
+          cropCoords.h = origBottom - cropCoords.y;
+        } else if (activeHandle === 'nw') {
+          let origRight = cropCoords.x + cropCoords.w;
+          let origBottom = cropCoords.y + cropCoords.h;
+          cropCoords.x = Math.max(0, Math.min(origRight - 30, mouseX));
+          cropCoords.y = Math.max(0, Math.min(origBottom - 30, mouseY));
+          cropCoords.w = origRight - cropCoords.x;
+          cropCoords.h = origBottom - cropCoords.y;
+        }
+        updateCropBoxStyles();
+      }
+    });
+
+    const endCropDrag = () => { isMovingCropBox = false; isScalingCropBox = false; };
+    window.addEventListener('mouseup', endCropDrag);
+
+    // Support touch devices for the crop box drag metrics
+    cropBox.addEventListener('touchstart', (e) => {
+      if (e.target.classList.contains('crop-handle')) return;
+      isMovingCropBox = true;
+      let touch = e.touches[0];
+      dragAnchor.x = touch.clientX - cropCoords.x;
+      dragAnchor.y = touch.clientY - cropCoords.y;
+    });
+
+    document.querySelectorAll('.crop-handle').forEach(handle => {
+      handle.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        isScalingCropBox = true;
+        activeHandle = e.target.className.split(' ')[1].split('-')[1];
+      });
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isMovingCropBox && !isScalingCropBox) return;
+      let touch = e.touches[0];
+      const containerRect = document.getElementById('canvasContainer').getBoundingClientRect();
+      let mouseX = touch.clientX - containerRect.left;
+      let mouseY = touch.clientY - containerRect.top;
+
+      if (isMovingCropBox) {
+        cropCoords.x = Math.max(0, Math.min(containerRect.width - cropCoords.w, touch.clientX - dragAnchor.x));
+        cropCoords.y = Math.max(0, Math.min(containerRect.height - cropCoords.h, touch.clientY - dragAnchor.y));
+        updateCropBoxStyles();
+      } else if (isScalingCropBox) {
+        if (activeHandle === 'se') {
+          cropCoords.w = Math.max(30, Math.min(containerRect.width - cropCoords.x, mouseX - cropCoords.x));
+          cropCoords.h = Math.max(30, Math.min(containerRect.height - cropCoords.y, mouseY - cropCoords.y));
+        } else if (activeHandle === 'sw') {
+          let origRight = cropCoords.x + cropCoords.w;
+          cropCoords.x = Math.max(0, Math.min(origRight - 30, mouseX));
+          cropCoords.w = origRight - cropCoords.x;
+          cropCoords.h = Math.max(30, Math.min(containerRect.height - cropCoords.y, mouseY - cropCoords.y));
+        } else if (activeHandle === 'ne') {
+          let origBottom = cropCoords.y + cropCoords.h;
+          cropCoords.w = Math.max(30, Math.min(containerRect.width - cropCoords.x, mouseX - cropCoords.x));
+          cropCoords.y = Math.max(0, Math.min(origBottom - 30, mouseY));
+          cropCoords.h = origBottom - cropCoords.y;
+        } else if (activeHandle === 'nw') {
+          let origRight = cropCoords.x + cropCoords.w;
+          let origBottom = cropCoords.y + cropCoords.h;
+          cropCoords.x = Math.max(0, Math.min(origRight - 30, mouseX));
+          cropCoords.y = Math.max(0, Math.min(origBottom - 30, mouseY));
+          cropCoords.w = origRight - cropCoords.x;
+          cropCoords.h = origBottom - cropCoords.y;
+        }
+        updateCropBoxStyles();
+      }
+    });
+    window.addEventListener('touchend', endCropDrag);
+
+    function executeActiveCanvasCrop() {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = workingCanvas.width / rect.width;
+      const scaleY = workingCanvas.height / rect.height;
+
+      let sx = cropCoords.x * scaleX;
+      let sy = cropCoords.y * scaleY;
+      let sw = cropCoords.w * scaleX;
+      let sh = cropCoords.h * scaleY;
+
+      if (sw <= 5 || sh <= 5) return;
+
+      let temp = document.createElement('canvas');
+      temp.width = sw; temp.height = sh;
+      temp.getContext('2d').drawImage(workingCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      workingCanvas.width = sw; workingCanvas.height = sh;
+      workingCtx.clearRect(0,0,sw,sh);
+      workingCtx.drawImage(temp, 0, 0);
+
+      pushHistory();
+      renderWorkspaceView();
+    }
+
+    // ==========================================
+    // CHROMA SELECTION: TRANSPARENCY ERASER
+    // ==========================================
+    function toggleWandState() {
+      isWandToolActive = !isWandToolActive;
+      document.getElementById('magicWandToggle').classList.toggle('active', isWandToolActive);
+      canvas.style.cursor = isWandToolActive ? 'crosshair' : 'default';
+    }
+    document.getElementById('magicWandToggle').addEventListener('click', toggleWandState);
+    document.getElementById('wandTolerance').addEventListener('input', (e) => {
+      document.getElementById('lbl-tolerance').innerText = e.target.value;
+    });
+
+    canvas.addEventListener('click', (e) => {
+      if(!isWandToolActive) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = workingCanvas.width / rect.width;
+      const scaleY = workingCanvas.height / rect.height;
+
+      const clickX = Math.floor((e.clientX - rect.left) * scaleX);
+      const clickY = Math.floor((e.clientY - rect.top) * scaleY);
+
+      const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+      const data = imgData.data;
+      const startIdx = (clickY * workingCanvas.width + clickX) * 4;
+
+      const targetR = data[startIdx];
+      const targetG = data[startIdx+1];
+      const targetB = data[startIdx+2];
+      const tolerance = parseInt(document.getElementById('wandTolerance').value, 10);
+
+      for (let i = 0; i < data.length; i += 4) {
+        let diff = Math.sqrt((data[i]-targetR)**2 + (data[i+1]-targetG)**2 + (data[i+2]-targetB)**2);
+        if(diff <= tolerance * 1.73) {
+          data[i+3] = 0; 
+        }
+      }
+
+      workingCtx.putImageData(imgData, 0, 0);
+      pushHistory();
+      renderWorkspaceView();
+    });
+
+    // ==========================================
+    // FLEXIBLE SYSTEM EXPORT MATRIX
+    // ==========================================
+    document.getElementById('exportBgMode').addEventListener('change', (e) => {
+      document.getElementById('exportColorWrapper').style.display = e.target.value === 'solid' ? 'block' : 'none';
+    });
+
+    document.getElementById('commitExportBtn').addEventListener('click', () => {
+      const format = document.getElementById('exportFormat').value;
+      const bgMode = document.getElementById('exportBgMode').value;
+      
+      // Fetch user specified dynamic target resolution properties
+      const targetWidth = parseInt(document.getElementById('exportWidth').value, 10) || workingCanvas.width;
+      const targetHeight = parseInt(document.getElementById('exportHeight').value, 10) || workingCanvas.height;
+
+      let exportCanvas = document.createElement('canvas');
+      exportCanvas.width = targetWidth;
+      exportCanvas.height = targetHeight;
+      let exportCtx = exportCanvas.getContext('2d');
+
+      if(format === 'image/jpeg') {
+        exportCtx.fillStyle = (bgMode === 'solid') ? document.getElementById('exportBgColor').value : '#ffffff';
+        exportCtx.fillRect(0, 0, targetWidth, targetHeight);
+      } else if (bgMode === 'solid') {
+        exportCtx.fillStyle = document.getElementById('exportBgColor').value;
+        exportCtx.fillRect(0, 0, targetWidth, targetHeight);
+      }
+
+      // Draw standard composition mapped onto the user explicit target resolution sizes
+      exportCtx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+      let a = document.createElement('a');
+      let ext = format.split('/')[1];
+      a.download = `studio_export_${Date.now()}.${ext}`;
+      a.href = exportCanvas.toDataURL(format, 0.92);
+      a.click();
+    });
+  </script>
+</body>
+</html>
