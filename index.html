@@ -161,6 +161,134 @@
             pushHistory();
             renderWorkspaceView();
           }, true);
+
+          executeCreativeFXMath = function() {
+            if (!filterSnapshot) return;
+            workingCtx.putImageData(filterSnapshot, 0, 0);
+            const imgData = workingCtx.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+            const d = imgData.data;
+
+            if (currentActiveEffect === 'dramatic') {
+              for (let i = 0; i < d.length; i += 4) {
+                const r = d[i], g = d[i+1], b = d[i+2];
+                let nr = (r - 128) * 1.38 + 128;
+                let ng = (g - 128) * 1.34 + 128;
+                let nb = (b - 128) * 1.42 + 128;
+                const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+                const shadow = Math.max(0, (120 - lum) / 120);
+                nr -= 22 * shadow;
+                ng -= 17 * shadow;
+                nb -= 8 * shadow;
+                nb += 8;
+                d[i] = Math.max(0, Math.min(255, nr));
+                d[i+1] = Math.max(0, Math.min(255, ng));
+                d[i+2] = Math.max(0, Math.min(255, nb));
+              }
+            } else if (currentActiveEffect === 'comic') {
+              const w = imgData.width, h = imgData.height;
+              const src = new Uint8ClampedArray(d);
+              const gray = new Uint8ClampedArray(w * h);
+              for (let p = 0, i = 0; i < src.length; i += 4, p++) {
+                gray[p] = 0.299*src[i] + 0.587*src[i+1] + 0.114*src[i+2];
+              }
+              for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                  const p = y*w + x;
+                  const i = p*4;
+                  const q = v => Math.min(255, Math.round(v / 64) * 64);
+                  let r = q(src[i]), g = q(src[i+1]), b = q(src[i+2]);
+                  if (x > 0 && y > 0 && x < w-1 && y < h-1) {
+                    const gx = -gray[(y-1)*w+x-1] - 2*gray[y*w+x-1] - gray[(y+1)*w+x-1]
+                               + gray[(y-1)*w+x+1] + 2*gray[y*w+x+1] + gray[(y+1)*w+x+1];
+                    const gy = -gray[(y-1)*w+x-1] - 2*gray[(y-1)*w+x] - gray[(y-1)*w+x+1]
+                               + gray[(y+1)*w+x-1] + 2*gray[(y+1)*w+x] + gray[(y+1)*w+x+1];
+                    const edge = Math.sqrt(gx*gx + gy*gy);
+                    if (edge > 150) r = g = b = 20;
+                    else {
+                      const satBoost = 1.15;
+                      const avg = (r+g+b)/3;
+                      r = avg + (r-avg)*satBoost;
+                      g = avg + (g-avg)*satBoost;
+                      b = avg + (b-avg)*satBoost;
+                    }
+                  }
+                  d[i] = Math.max(0, Math.min(255, r));
+                  d[i+1] = Math.max(0, Math.min(255, g));
+                  d[i+2] = Math.max(0, Math.min(255, b));
+                }
+              }
+            } else if (currentActiveEffect === 'infrared') {
+              for (let i = 0; i < d.length; i += 4) {
+                const r = d[i], g = d[i+1], b = d[i+2];
+                const lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+                let nr, ng, nb;
+                if (lum < 0.33) {
+                  const t = lum / 0.33;
+                  nr = 55 + 145*t;
+                  ng = 0 + 35*t;
+                  nb = 110 + 110*t;
+                } else if (lum < 0.66) {
+                  const t = (lum - 0.33) / 0.33;
+                  nr = 200 + 55*t;
+                  ng = 35 + 125*t;
+                  nb = 220 - 190*t;
+                } else {
+                  const t = (lum - 0.66) / 0.34;
+                  nr = 255;
+                  ng = 160 + 95*t;
+                  nb = 30 + 205*t;
+                }
+                const channelBias = (r - b) * 0.12;
+                d[i] = Math.max(0, Math.min(255, nr + channelBias));
+                d[i+1] = Math.max(0, Math.min(255, ng));
+                d[i+2] = Math.max(0, Math.min(255, nb - channelBias));
+              }
+            } else {
+              if (currentActiveEffect === 'vintage') {
+                for (let i = 0; i < d.length; i += 4) {
+                  let r = d[i], g = d[i+1], b = d[i+2];
+                  d[i] = (r * 0.393) + (g * 0.769) + (b * 0.189) + 15;
+                  d[i+1] = (r * 0.349) + (g * 0.686) + (b * 0.168);
+                  d[i+2] = (r * 0.272) + (g * 0.534) + (b * 0.131) - 10;
+                }
+              } else if(currentActiveEffect === 'cyberpunk') {
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = d[i] > 100 ? 255 : d[i] + 30;
+                  d[i+1] = d[i+1] * 0.4;
+                  d[i+2] = d[i+2] > 100 ? 255 : d[i+2] + 70;
+                }
+              } else if(currentActiveEffect === 'polaroid') {
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = d[i]*0.88 + 20; d[i+1] = d[i+1]*0.88 + 15; d[i+2] = d[i+2]*0.75;
+                }
+              } else if(currentActiveEffect === 'fade') {
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = d[i]*0.75 + 35; d[i+1] = d[i+1]*0.75 + 35; d[i+2] = d[i+2]*0.75 + 45;
+                }
+              } else if(currentActiveEffect === 'solarize') {
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = d[i] > 127 ? 255 - d[i] : d[i];
+                  d[i+1] = d[i+1] > 127 ? 255 - d[i+1] : d[i+1];
+                  d[i+2] = d[i+2] > 127 ? 255 - d[i+2] : d[i+2];
+                }
+              } else if(currentActiveEffect === 'posterize') {
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = Math.floor(d[i] / 64) * 64;
+                  d[i+1] = Math.floor(d[i+1] / 64) * 64;
+                  d[i+2] = Math.floor(d[i+2] / 64) * 64;
+                }
+              } else if(currentActiveEffect === 'monochrome') {
+                for (let i = 0; i < d.length; i += 4) {
+                  let v = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+                  let c = v > 115 ? 255 : 20;
+                  d[i] = d[i+1] = d[i+2] = c;
+                }
+              }
+            }
+
+            workingCtx.putImageData(imgData, 0, 0);
+            renderWorkspaceView();
+          };
         })();
       `;
       doc.body.appendChild(script);
